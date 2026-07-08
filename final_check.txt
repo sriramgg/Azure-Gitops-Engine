@@ -1,0 +1,43 @@
+=== ARCHITECTURE ===
+27:  70  │  Developer   │     │  GitHub Actions  │     │  Azure Container     │
+28:  70  │  git push    │────>│  CI/CD Pipeline  │────>│  Registry (ACR)      │
+29:  70  │   (main)     │     │                  │     │                      │
+30:  70  └──────────────┘     │  build-and-push  │     │  jobguard-app:sha    │
+31:  70                       │  deploy-to-aks   │     │  jobguard-app:last   │
+32:  70                       └────────┬─────────┘     └──────────────────────┘
+33:  31 <<<                                │
+34:  31                                ▼
+35:  68                       ┌─────────────────────────────────────────────┐
+36:  68                       │               AKS Cluster                   │
+37:  68                       ├─────────────────────────────────────────────┤
+38:  68                       │  ┌────────────┐    2 replicas               │
+39:  68                       │  │ Deployment │    rolling update           │
+40:  68                       │  │  (2 pods)  │    resource limits          │
+41:  68                       │  └────────────┘    health probes            │
+42:  68                       │  ┌────────────┐    HPA 2 -> 6 pods          │
+43:  68                       │  │  Service   │    LoadBalancer :80         │
+44:  68                       │  │   : 80     │                             │
+45:  68                       │  └────────────┘                             │
+46:  68                       └─────────────────────────────────────────────┘
+47:   3  ```
+
+=== PIPELINE ===
+166:  70  ┌────────────────────────────────────────────────────────────────────┐
+167:  70  │  GitHub Actions Pipeline                   Status            Time  │
+168:  70  ├────────────────────────────────────────────────────────────────────┤
+169:  70  │  build-and-push (CI)                        [PASS]           0:52  │
+170:  70  │  ├─ actions/checkout@v3                     [PASS]           0:03  │
+171:  70  │  ├─ azure/login@v2                          [PASS]           0:05  │
+172:  70  │  ├─ az acr login                            [PASS]           0:04  │
+173:  70  │  ├─ docker build                            [PASS]           0:25  │
+174:  70  │  ├─ docker push (SHA + latest)              [PASS]           0:10  │
+175:  70  │  └─ docker logout                           [PASS]           0:01  │
+176:  70  │                                                                    │
+177:  70  │  deploy-to-aks (CD)                         [PASS]           0:35  │
+178:  70  │  ├─ azure/login@v2                          [PASS]           0:04  │
+179:  70  │  ├─ az aks get-credentials                  [PASS]           0:06  │
+180:  70  │  ├─ kubectl apply -f k8s/                   [PASS]           0:05  │
+181:  70  │  └─ kubectl rollout status                  [PASS]           0:12  │
+182:  70  │                                                                    │
+183:  70  │  TOTAL LIFECYCLE                            [PASS]           1:27  │
+184:  70  └────────────────────────────────────────────────────────────────────┘

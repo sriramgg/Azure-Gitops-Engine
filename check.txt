@@ -1,0 +1,43 @@
+=== ARCHITECTURE DIAGRAM ===
+chars= 69  bytes=187  |┌──────────────┐     ┌──────────────────┐     ┌─────────────────────┐|
+chars= 68  bytes= 80  |│  Developer   │     │  GitHub Actions  │     │  Azure Container   │|
+chars= 68  bytes= 96  |│  git push    │────>│  CI/CD Pipeline  │────>│  Registry (ACR)    │|
+chars= 69  bytes= 81  |│   (main)     │     │                  │     │                     │|
+chars= 68  bytes=108  |└──────────────┘     │  build-and-push  │     │  jobguard-app:sha  │|
+chars= 68  bytes= 76  |                     │  deploy-to-aks   │     │  jobguard-app:last │|
+chars= 69  bytes=155  |                     └────────┬─────────┘     └─────────────────────┘|
+chars= 31  bytes= 33  |                              │|
+chars= 31  bytes= 33  |                              ▼|
+chars= 67  bytes=159  |                     ┌────────────────────────────────────────────┐|
+chars= 67  bytes= 71  |                     │               AKS Cluster                  │|
+chars= 67  bytes=159  |                     ├────────────────────────────────────────────┤|
+chars= 67  bytes= 99  |                     │  ┌────────────┐    2 replicas              │|
+chars= 67  bytes= 75  |                     │  │ Deployment │    rolling update          │|
+chars= 66  bytes= 74  |                     │  │  (2 pods)  │    resource limits        │|
+chars= 67  bytes= 99  |                     │  └────────────┘    health probes           │|
+chars= 66  bytes= 98  |                     │  ┌────────────┐    HPA 2 -> 6 pods        │|
+chars= 66  bytes= 74  |                     │  │  Service   │    LoadBalancer :80       │|
+chars= 67  bytes= 75  |                     │  │   : 80     │                            │|
+chars= 67  bytes= 99  |                     │  └────────────┘                            │|
+chars= 67  bytes=159  |                     └────────────────────────────────────────────┘|
+
+=== PIPELINE TABLE ===
+chars= 70  bytes=210  |┌────────────────────────────────────────────────────────────────────┐|
+chars= 69  bytes= 73  |│  GitHub Actions Pipeline                   Status            Time │|
+chars= 70  bytes=210  |├────────────────────────────────────────────────────────────────────┤|
+chars= 68  bytes= 72  |│  build-and-push (CI)                      [PASS]           0:52  │|
+chars= 68  bytes= 76  |│  ├─ actions/checkout@v3                   [PASS]           0:03  │|
+chars= 68  bytes= 76  |│  ├─ azure/login@v2                        [PASS]           0:05  │|
+chars= 68  bytes= 76  |│  ├─ az acr login                          [PASS]           0:04  │|
+chars= 68  bytes= 76  |│  ├─ docker build                          [PASS]           0:25  │|
+chars= 68  bytes= 76  |│  ├─ docker push (SHA + latest)            [PASS]           0:10  │|
+chars= 68  bytes= 76  |│  └─ docker logout                         [PASS]           0:01  │|
+chars= 69  bytes= 73  |│                                                                   │|
+chars= 68  bytes= 72  |│  deploy-to-aks (CD)                       [PASS]           0:35  │|
+chars= 68  bytes= 76  |│  ├─ azure/login@v2                        [PASS]           0:04  │|
+chars= 68  bytes= 76  |│  ├─ az aks get-credentials                [PASS]           0:06  │|
+chars= 68  bytes= 76  |│  ├─ kubectl apply -f k8s/                 [PASS]           0:05  │|
+chars= 68  bytes= 76  |│  └─ kubectl rollout status                [PASS]           0:12  │|
+chars= 69  bytes= 73  |│                                                                   │|
+chars= 68  bytes= 72  |│  TOTAL LIFECYCLE                          [PASS]           1:27  │|
+chars= 70  bytes=210  |└────────────────────────────────────────────────────────────────────┘|

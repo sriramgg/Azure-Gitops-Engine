@@ -23,29 +23,27 @@ Most deployment projects stop at pushing an image to a registry. This project si
 ## Architecture Overview
 
 ```
-┌──────────────┐     ┌──────────────────┐     ┌─────────────────────┐
-│  Developer   │     │  GitHub Actions  │     │  Azure Container   │
-│  git push    │────>│  CI/CD Pipeline  │────>│  Registry (ACR)    │
-│   (main)     │     │                  │     │                     │
-└──────────────┘     │  build-and-push  │     │  jobguard-app:sha  │
-                     │  deploy-to-aks   │     │  jobguard-app:last │
-                     └────────┬─────────┘     └─────────────────────┘
+┌──────────────┐     ┌──────────────────┐     ┌──────────────────────┐
+│  Developer   │     │  GitHub Actions  │     │  Azure Container     │
+│  git push    │────>│  CI/CD Pipeline  │────>│  Registry (ACR)      │
+│   (main)     │     │                  │     │                      │
+└──────────────┘     │  build-and-push  │     │  jobguard-app:sha    │
+                     │  deploy-to-aks   │     │  jobguard-app:last   │
+                     └────────┬─────────┘     └──────────────────────┘
                               │
                               ▼
-                     ┌──────────────────┐
-                     │   AKS Cluster    │
-                     │  ┌────────────┐  │
-                     │  │ Deployment │  │  ── 2 replicas
-                     │  │ (2 pods)   │  │  ── rolling update
-                     │  └────────────┘  │  ── resource limits
-                     │  ┌────────────┐  │  ── health probes
-                     │  │  Service   │  │  ── HPA (2→6 pods)
-                     │  │   : 80     │  │  ── LoadBalancer
-                     │  └────────────┘  │
-                     └──────────────────┘
-                     ┌──────────────────┐
-                     │   HPA (cpu>70%)  │
-                     └──────────────────┘
+                     ┌─────────────────────────────────────────────┐
+                     │               AKS Cluster                   │
+                     ├─────────────────────────────────────────────┤
+                     │  ┌────────────┐    2 replicas               │
+                     │  │ Deployment │    rolling update           │
+                     │  │  (2 pods)  │    resource limits          │
+                     │  └────────────┘    health probes            │
+                     │  ┌────────────┐    HPA 2 -> 6 pods          │
+                     │  │  Service   │    LoadBalancer :80         │
+                     │  │   : 80     │                             │
+                     │  └────────────┘                             │
+                     └─────────────────────────────────────────────┘
 ```
 
 ---
@@ -165,25 +163,25 @@ curl http://localhost/health   # {"status":"healthy"}
 ## Pipeline Visual Evidence
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│  GitHub Actions                                 Status    Time  │
-├──────────────────────────────────────────────────────────────────┤
-│  ✔ build-and-push (CI)                           ✅      0:52  │
-│    ├─ actions/checkout@v3                        ✅      0:03  │
-│    ├─ azure/login@v2                             ✅      0:05  │
-│    ├─ az acr login                               ✅      0:04  │
-│    ├─ docker build                               ✅      0:25  │
-│    ├─ docker push (SHA + latest)                 ✅      0:10  │
-│    └─ docker logout                              ✅      0:01  │
-│                                                                  │
-│  ✔ deploy-to-aks (CD)                            ✅      0:35  │
-│    ├─ azure/login@v2                             ✅      0:04  │
-│    ├─ az aks get-credentials                     ✅      0:06  │
-│    ├─ kubectl apply -f k8s/                      ✅      0:05  │
-│    └─ kubectl rollout status                     ✅      0:12  │
-│                                                                  │
-│  🟢 TOTAL LIFECYCLE                              ✅      1:27  │
-└──────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────┐
+│  GitHub Actions Pipeline                   Status            Time  │
+├────────────────────────────────────────────────────────────────────┤
+│  build-and-push (CI)                        [PASS]           0:52  │
+│  ├─ actions/checkout@v3                     [PASS]           0:03  │
+│  ├─ azure/login@v2                          [PASS]           0:05  │
+│  ├─ az acr login                            [PASS]           0:04  │
+│  ├─ docker build                            [PASS]           0:25  │
+│  ├─ docker push (SHA + latest)              [PASS]           0:10  │
+│  └─ docker logout                           [PASS]           0:01  │
+│                                                                    │
+│  deploy-to-aks (CD)                         [PASS]           0:35  │
+│  ├─ azure/login@v2                          [PASS]           0:04  │
+│  ├─ az aks get-credentials                  [PASS]           0:06  │
+│  ├─ kubectl apply -f k8s/                   [PASS]           0:05  │
+│  └─ kubectl rollout status                  [PASS]           0:12  │
+│                                                                    │
+│  TOTAL LIFECYCLE                            [PASS]           1:27  │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
