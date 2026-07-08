@@ -4,19 +4,54 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build-and-delivery:
+  build-and-push:
     runs-on: ubuntu-latest
     steps:
-    - name: Fetch repository checkout code streams
-      uses: actions/checkout@v3
+    - uses: actions/checkout@v3
 
-    - name: Azure Login Infrastructure Identity Handshake
-      uses: azure/login@v1
+    - name: Azure Login
+      uses: azure/login@v2
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-    - name: Docker Package Build & Push to Registry
+    - name: Authenticate ACR & Build Docker Image
       run: |
-        docker build -t sriramacr.azurecr.io/jobguard-app:${{ github.sha }} .
         az acr login --name sriramacr
+        docker build -t sriramacr.azurecr.io/jobguard-app:${{ github.sha }} .
+
+    - name: Push Image to ACR
+      run: |
         docker push sriramacr.azurecr.io/jobguard-app:${{ github.sha }}
+
+    - name: Tag as latest
+      run: |
+        docker tag sriramacr.azurecr.io/jobguard-app:${{ github.sha }} sriramacr.azurecr.io/jobguard-app:latest
+        docker push sriramacr.azurecr.io/jobguard-app:latest
+
+    - name: Cleanup Docker credentials
+      run: docker logout
+
+  deploy-to-aks:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Azure Login
+      uses: azure/login@v2
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Set AKS context
+      run: |
+        az aks get-credentials --resource-group ${{ secrets.AKS_RG }} --name ${{ secrets.AKS_NAME }}
+
+    - name: Deploy to AKS
+      run: |
+        sed -i "s|IMAGE_PLACEHOLDER|sriramacr.azurecr.io/jobguard-app:${{ github.sha }}|g" k8s/deployment.yaml
+        kubectl apply -f k8s/deployment.yaml
+        kubectl apply -f k8s/service.yaml
+
+    - name: Verify rollout status
+      run: |
+        kubectl rollout status deployment/jobguard-app --timeout=120s

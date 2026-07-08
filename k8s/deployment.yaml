@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jobguard-app
+  labels:
+    app: jobguard-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: jobguard-app
+  template:
+    metadata:
+      labels:
+        app: jobguard-app
+    spec:
+      containers:
+      - name: jobguard-app
+        image: IMAGE_PLACEHOLDER
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "256Mi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 3
+          periodSeconds: 5
