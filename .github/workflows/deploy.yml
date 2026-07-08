@@ -1,0 +1,22 @@
+name: Cloud-Native GitOps Engine Lifecycle
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-and-delivery:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Fetch repository checkout code streams
+      uses: actions/checkout@v3
+
+    - name: Azure Login Infrastructure Identity Handshake
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Docker Package Build & Push to Registry
+      run: |
+        docker build -t sriramacr.azurecr.io/jobguard-app:${{ github.sha }} .
+        az acr login --name sriramacr
+        docker push sriramacr.azurecr.io/jobguard-app:${{ github.sha }}
