@@ -39,9 +39,12 @@ Most deployment projects stop at pushing an image to a registry. This project si
                      │  │ (2 pods)   │  │  ── rolling update
                      │  └────────────┘  │  ── resource limits
                      │  ┌────────────┐  │  ── health probes
-                     │  │  Service   │  │
+                     │  │  Service   │  │  ── HPA (2→6 pods)
                      │  │   : 80     │  │  ── LoadBalancer
                      │  └────────────┘  │
+                     └──────────────────┘
+                     ┌──────────────────┐
+                     │   HPA (cpu>70%)  │
                      └──────────────────┘
 ```
 
@@ -57,6 +60,7 @@ Most deployment projects stop at pushing an image to a registry. This project si
 | **Orchestration** | Kubernetes Deployment with 2 replicas, rolling update strategy |
 | **Resilience** | Liveness + Readiness HTTP probes, resource requests/limits |
 | **Security** | Azure service principal (non-interactive auth), `docker logout` cleanup, secrets-based credential management |
+| **Auto Scaling** | HorizontalPodAutoscaler (CPU ≥70% triggers scale-up, 2→6 replicas) |
 | **Cost Governance** | Ephemeral compute model — ₹0 idle cost overhead |
 | **Observability** | Rollout verification via `kubectl rollout status`, health endpoint monitoring |
 
@@ -117,6 +121,18 @@ ports:
     targetPort: 80
 ```
 
+### HorizontalPodAutoscaler (`k8s/hpa.yaml`)
+```yaml
+minReplicas: 2
+maxReplicas: 6
+metrics:
+  - resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+```
+
 ---
 
 ## Technologies Demonstrated
@@ -126,7 +142,7 @@ ports:
 | **CI/CD Platform** | GitHub Actions (composite workflows, job dependencies, secrets mgmt) |
 | **Containerization** | Docker, Dockerfile, `.dockerignore`, multi-stage patterns |
 | **Cloud (Azure)** | Azure Container Registry, Azure Kubernetes Service, Service Principal auth |
-| **Orchestration** | Kubernetes (Deployment, Service, probes, rolling updates, resource quotas) |
+| **Orchestration** | Kubernetes (Deployment, Service, HPA, probes, rolling updates, resource quotas) |
 | **Application** | Python, Flask, Gunicorn (production WSGI), REST API design |
 | **Security** | IAM service principals, secrets management, credential lifecycle cleanup |
 
