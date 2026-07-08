@@ -4,9 +4,9 @@
 
 **End-to-end CI/CD pipeline · Docker · Azure Kubernetes Service · GitHub Actions**
 
-[![Pipeline Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/sriramgg/Azure-Gitops-Engine/actions)
-[![Infrastructure](https://img.shields.io/badge/infra-AKS-0078D4?logo=microsoft-azure)](https://azure.microsoft.com)
-[![Container](https://img.shields.io/badge/container-Docker-2496ED?logo=docker)](https://docker.com)
+[![Pipeline](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/sriramgg/Azure-Gitops-Engine/actions)
+[![Azure](https://img.shields.io/badge/infra-AKS-0078D4?logo=microsoft-azure)](https://azure.microsoft.com)
+[![Docker](https://img.shields.io/badge/container-Docker-2496ED?logo=docker)](https://docker.com)
 
 </div>
 
@@ -14,7 +14,7 @@
 
 ## Why This Project Exists
 
-Most deployment projects stop at pushing an image to a registry. This project simulates a **real-world production GitOps workflow** — from a developer's `git push` to a running, health-checked microservice on a Kubernetes cluster — using the exact same tools and patterns used at scale in industry.
+Most deployment projects stop at pushing an image to a registry. This project simulates a production GitOps workflow — from a developer's `git push` to a running, health-checked microservice on AKS — using the exact same tools and patterns used at scale in industry.
 
 **The problem it solves:** Manual deployments are error-prone, slow, and don't scale. This engine eliminates human error, enforces consistency, and reduces time-to-production from hours to under 2 minutes.
 
@@ -35,11 +35,12 @@ Most deployment projects stop at pushing an image to a registry. This project si
                      ┌──────────────────┐
                      │   AKS Cluster    │
                      │  ┌────────────┐  │
-                     │  │ Deployment │  │  2 replicas, rolling update
-                     │  │ (2 pods)   │  │  resource limits, health probes
-                     │  └────────────┘  │
-                     │  ┌────────────┐  │
-                     │  │  Service   │  │  LoadBalancer → port 80
+                     │  │ Deployment │  │  ── 2 replicas
+                     │  │ (2 pods)   │  │  ── rolling update
+                     │  └────────────┘  │  ── resource limits
+                     │  ┌────────────┐  │  ── health probes
+                     │  │  Service   │  │
+                     │  │   : 80     │  │  ── LoadBalancer
                      │  └────────────┘  │
                      └──────────────────┘
 ```
@@ -68,23 +69,23 @@ Most deployment projects stop at pushing an image to a registry. This project si
 Triggered on every push to `main`:
 
 ```
-checkout → azure login → az acr login → docker build → docker push → docker tag latest → docker push latest → docker logout
+checkout → azure login → acr login → docker build → docker push → tag latest → push latest → docker logout
 ```
 
-- **Immutable tagging**: image tagged with `${{ github.sha }}` for full traceability from commit to container
-- **Registry auth**: ACR login performed before build to fail fast if credentials are invalid
+- **Immutable tagging:** image tagged with `${{ github.sha }}` for full traceability from commit to container
+- **Registry auth:** ACR login performed before build to fail fast if credentials are invalid
 
 ### Job 2: `deploy-to-aks` (CD)
 
 Runs only after Job 1 succeeds:
 
 ```
-aks get-credentials → kubectl apply deployment → kubectl apply service → rollout status verification
+aks get-credentials → kubectl apply deployment → kubectl apply service → rollout status
 ```
 
-- **Rolling update**: zero-downtime deployments via Kubernetes native rollout
-- **Health verification**: pipeline blocks until all pods pass readiness probes (max 120s timeout)
-- **Dynamic image injection**: SHA-pinned image injected into `deployment.yaml` via `sed`
+- **Rolling update:** zero-downtime deployments via Kubernetes native rollout
+- **Health verification:** pipeline blocks until all pods pass readiness probes (max 120s timeout)
+- **Dynamic image injection:** SHA-pinned image injected into `deployment.yaml` via `sed`
 
 ---
 
@@ -98,14 +99,22 @@ containers:
   - resources:
       requests: { cpu: "250m", memory: "128Mi" }
       limits:   { cpu: "500m", memory: "256Mi" }
-  - livenessProbe:  httpGet /health, initialDelay: 5s, period: 10s
-  - readinessProbe: httpGet /health, initialDelay: 3s, period: 5s
+  - livenessProbe:
+      httpGet: /health
+      initialDelaySeconds: 5
+      periodSeconds: 10
+  - readinessProbe:
+      httpGet: /health
+      initialDelaySeconds: 3
+      periodSeconds: 5
 ```
 
 ### Service (`k8s/service.yaml`)
 ```yaml
 type: LoadBalancer
-port: 80 → targetPort: 80
+ports:
+  - port: 80
+    targetPort: 80
 ```
 
 ---
@@ -140,25 +149,25 @@ curl http://localhost/health   # {"status":"healthy"}
 ## Pipeline Visual Evidence
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  GitHub Actions                           Status  Time  │
-├─────────────────────────────────────────────────────────┤
-│  ✔ build-and-push (CI)                    ✅    0:52   │
-│    ├─ actions/checkout@v3                 ✅    0:03   │
-│    ├─ azure/login@v2                      ✅    0:05   │
-│    ├─ az acr login                        ✅    0:04   │
-│    ├─ docker build                        ✅    0:25   │
-│    ├─ docker push (SHA + latest)          ✅    0:10   │
-│    └─ docker logout                       ✅    0:01   │
-│                                                         │
-│  ✔ deploy-to-aks (CD)                    ✅    0:35   │
-│    ├─ azure/login@v2                      ✅    0:04   │
-│    ├─ az aks get-credentials              ✅    0:06   │
-│    ├─ kubectl apply -f k8s/              ✅    0:05   │
-│    └─ kubectl rollout status              ✅    0:12   │
-│                                                         │
-│  🟢 TOTAL LIFECYCLE                     ✅    1:27   │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│  GitHub Actions                                 Status    Time  │
+├──────────────────────────────────────────────────────────────────┤
+│  ✔ build-and-push (CI)                           ✅      0:52  │
+│    ├─ actions/checkout@v3                        ✅      0:03  │
+│    ├─ azure/login@v2                             ✅      0:05  │
+│    ├─ az acr login                               ✅      0:04  │
+│    ├─ docker build                               ✅      0:25  │
+│    ├─ docker push (SHA + latest)                 ✅      0:10  │
+│    └─ docker logout                              ✅      0:01  │
+│                                                                  │
+│  ✔ deploy-to-aks (CD)                            ✅      0:35  │
+│    ├─ azure/login@v2                             ✅      0:04  │
+│    ├─ az aks get-credentials                     ✅      0:06  │
+│    ├─ kubectl apply -f k8s/                      ✅      0:05  │
+│    └─ kubectl rollout status                     ✅      0:12  │
+│                                                                  │
+│  🟢 TOTAL LIFECYCLE                              ✅      1:27  │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -169,7 +178,7 @@ curl http://localhost/health   # {"status":"healthy"}
 |---|---|
 | Pipeline execution time | **~90 seconds** |
 | Deployment strategy | Rolling update (zero downtime) |
-| Cloud spend (idle) | **₹0** (ephemeral dev cluster autotear-down) |
+| Cloud spend (idle) | **₹0** (ephemeral dev cluster auto-teardown) |
 | Human touchpoints | **0** (fully automated from push to production) |
 
 ---
