@@ -1,4 +1,4 @@
-# Cloud-Native GitOps Delivery Engine (Project 2)
+# Cloud-Native GitOps Delivery Engine
 
 <div align="center">
 
