@@ -1,207 +1,59 @@
-# Cloud-Native GitOps Delivery Engine
+# Cloud-Native Delivery Engine
 
-<div align="center">
+A CI/CD portfolio project for packaging a Flask microservice and deploying it to Azure Kubernetes Service (AKS). It demonstrates the path from source code to a containerized application.
 
-**End-to-end CI/CD pipeline · Docker · Azure Kubernetes Service · GitHub Actions**
+## Architecture
 
-[![Pipeline](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/sriramgg/Azure-Gitops-Engine/actions)
-[![Azure](https://img.shields.io/badge/infra-AKS-0078D4?logo=microsoft-azure)](https://azure.microsoft.com)
-[![Docker](https://img.shields.io/badge/container-Docker-2496ED?logo=docker)](https://docker.com)
-
-</div>
-
----
-
-## Why This Project Exists
-
-Most deployment projects stop at pushing an image to a registry. This project simulates a production GitOps workflow — from a developer's `git push` to a running, health-checked microservice on AKS — using the exact same tools and patterns used at scale in industry.
-
-**The problem it solves:** Manual deployments are error-prone, slow, and don't scale. This engine eliminates human error, enforces consistency, and reduces time-to-production from hours to under 2 minutes.
-
----
-
-## Architecture Overview
-
-```
-┌──────────────┐     ┌──────────────────┐     ┌──────────────────────┐
-│  Developer   │     │  GitHub Actions  │     │  Azure Container     │
-│  git push    │────>│  CI/CD Pipeline  │────>│  Registry (ACR)      │
-│   (main)     │     │                  │     │                      │
-└──────────────┘     │  build-and-push  │     │  jobguard-app:sha    │
-                     │  deploy-to-aks   │     │  jobguard-app:last   │
-                     └────────┬─────────┘     └──────────────────────┘
-                              │
-                              ▼
-                     ┌─────────────────────────────────────────────┐
-                     │               AKS Cluster                   │
-                     ├─────────────────────────────────────────────┤
-                     │  ┌────────────┐    2 replicas               │
-                     │  │ Deployment │    rolling update           │
-                     │  │  (2 pods)  │    resource limits          │
-                     │  └────────────┘    health probes            │
-                     │  ┌────────────┐    HPA 2 -> 6 pods          │
-                     │  │  Service   │    LoadBalancer :80         │
-                     │  │   : 80     │                             │
-                     │  └────────────┘                             │
-                     └─────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    Git[GitHub] --> CI[GitHub Actions]
+    CI --> ACR[Azure Container Registry]
+    CI --> AKS[AKS Deployment]
+    ACR --> AKS
+    AKS --> Service[Kubernetes Service]
 ```
 
----
+## Implementation
 
-## Key Technical Achievements
+- Flask exposes a service status endpoint and a health endpoint.
+- Docker packages the application using a Python 3.9 slim base and Gunicorn.
+- Kubernetes deployment defines two replicas, resource requests and limits, and HTTP liveness and readiness probes.
+- The documented CI/CD design builds and publishes commit-tagged images to ACR before deploying to AKS.
 
-| Area | Implementation |
-|---|---|
-| **CI/CD Automation** | Two-job GitHub Actions pipeline: build+push → deploy |
-| **Containerization** | Multi-stage aware Dockerfile, distroless Python base, `.dockerignore` optimization |
-| **Cloud Registry** | Azure Container Registry with SHA-pinned immutable tags + `latest` alias |
-| **Orchestration** | Kubernetes Deployment with 2 replicas, rolling update strategy |
-| **Resilience** | Liveness + Readiness HTTP probes, resource requests/limits |
-| **Security** | Azure service principal (non-interactive auth), `docker logout` cleanup, secrets-based credential management |
-| **Auto Scaling** | HorizontalPodAutoscaler (CPU ≥70% triggers scale-up, 2→6 replicas) |
-| **Cost Governance** | Ephemeral compute model — ₹0 idle cost overhead |
-| **Observability** | Rollout verification via `kubectl rollout status`, health endpoint monitoring |
-
----
-
-## Pipeline Deep Dive
-
-### Job 1: `build-and-push` (CI)
-
-Triggered on every push to `main`:
-
-```
-checkout → azure login → acr login → docker build → docker push → tag latest → push latest → docker logout
-```
-
-- **Immutable tagging:** image tagged with `${{ github.sha }}` for full traceability from commit to container
-- **Registry auth:** ACR login performed before build to fail fast if credentials are invalid
-
-### Job 2: `deploy-to-aks` (CD)
-
-Runs only after Job 1 succeeds:
-
-```
-aks get-credentials → kubectl apply deployment → kubectl apply service → rollout status
-```
-
-- **Rolling update:** zero-downtime deployments via Kubernetes native rollout
-- **Health verification:** pipeline blocks until all pods pass readiness probes (max 120s timeout)
-- **Dynamic image injection:** SHA-pinned image injected into `deployment.yaml` via `sed`
-
----
-
-## Production-Grade Kubernetes Manifest
-
-### Deployment (`k8s/deployment.yaml`)
-```yaml
-replicas: 2
-strategy: RollingUpdate
-containers:
-  - resources:
-      requests: { cpu: "250m", memory: "128Mi" }
-      limits:   { cpu: "500m", memory: "256Mi" }
-  - livenessProbe:
-      httpGet: /health
-      initialDelaySeconds: 5
-      periodSeconds: 10
-  - readinessProbe:
-      httpGet: /health
-      initialDelaySeconds: 3
-      periodSeconds: 5
-```
-
-### Service (`k8s/service.yaml`)
-```yaml
-type: LoadBalancer
-ports:
-  - port: 80
-    targetPort: 80
-```
-
-### HorizontalPodAutoscaler (`k8s/hpa.yaml`)
-```yaml
-minReplicas: 2
-maxReplicas: 6
-metrics:
-  - resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 70
-```
-
----
-
-## Technologies Demonstrated
-
-| Category | Tools |
-|---|---|
-| **CI/CD Platform** | GitHub Actions (composite workflows, job dependencies, secrets mgmt) |
-| **Containerization** | Docker, Dockerfile, `.dockerignore`, multi-stage patterns |
-| **Cloud (Azure)** | Azure Container Registry, Azure Kubernetes Service, Service Principal auth |
-| **Orchestration** | Kubernetes (Deployment, Service, HPA, probes, rolling updates, resource quotas) |
-| **Application** | Python, Flask, Gunicorn (production WSGI), REST API design |
-| **Security** | IAM service principals, secrets management, credential lifecycle cleanup |
-
----
-
-## Local Development
+## Run locally
 
 ```bash
-# Run the microservice locally
-pip install -r requirements.txt
-gunicorn --bind 0.0.0.0:80 app:app
-
-# Test endpoints
-curl http://localhost/         # {"service":"JobGuardAI Engine","status":"running"}
-curl http://localhost/health   # {"status":"healthy"}
+python -m pip install -r requirements.txt
+flask --app app run
 ```
 
----
+Open http://127.0.0.1:5000/ and http://127.0.0.1:5000/health.
 
-## Pipeline Visual Evidence
+Alternatively:
 
-```
-┌────────────────────────────────────────────────────────────────────┐
-│  GitHub Actions Pipeline                   Status            Time  │
-├────────────────────────────────────────────────────────────────────┤
-│  build-and-push (CI)                        [PASS]           0:52  │
-│  ├─ actions/checkout@v3                     [PASS]           0:03  │
-│  ├─ azure/login@v2                          [PASS]           0:05  │
-│  ├─ az acr login                            [PASS]           0:04  │
-│  ├─ docker build                            [PASS]           0:25  │
-│  ├─ docker push (SHA + latest)              [PASS]           0:10  │
-│  └─ docker logout                           [PASS]           0:01  │
-│                                                                    │
-│  deploy-to-aks (CD)                         [PASS]           0:35  │
-│  ├─ azure/login@v2                          [PASS]           0:04  │
-│  ├─ az aks get-credentials                  [PASS]           0:06  │
-│  ├─ kubectl apply -f k8s/                   [PASS]           0:05  │
-│  └─ kubectl rollout status                  [PASS]           0:12  │
-│                                                                    │
-│  TOTAL LIFECYCLE                            [PASS]           1:27  │
-└────────────────────────────────────────────────────────────────────┘
+```bash
+docker build -t jobguard-engine .
+docker run --rm -p 8080:80 jobguard-engine
 ```
 
----
+## Deployment
 
-## Cost & Efficiency
+Configure Azure credentials and registry access using GitHub Actions secrets. Replace IMAGE_PLACEHOLDER in the Kubernetes deployment with an accessible container image before applying it.
 
-| Metric | Value |
-|---|---|
-| Pipeline execution time | **~90 seconds** |
-| Deployment strategy | Rolling update (zero downtime) |
-| Cloud spend (idle) | **₹0** (ephemeral dev cluster auto-teardown) |
-| Human touchpoints | **0** (fully automated from push to production) |
+```bash
+kubectl rollout status deployment/jobguard-app
+kubectl get pods
+```
 
----
+If a rollout fails, inspect pod events and logs. Where a previous revision exists, use `kubectl rollout undo deployment/jobguard-app` and verify its health.
 
-## Connect
+## Repository files
 
-[![GitHub](https://img.shields.io/badge/GitHub-sriramgg-181717?logo=github)](https://github.com/sriramgg)
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0A66C2?logo=linkedin)](https://linkedin.com/in/sriramgg)
+- [app.py](app.py): Flask service.
+- [Dockerfile](Dockerfile): container build.
+- [k8s/deployment.yaml](k8s/deployment.yaml): deployment and health probes.
+- [GitHub Actions](https://github.com/sriramgg/Azure-Gitops-Engine/actions): pipeline history.
 
----
+## Scope
 
-> *"I built a fully automated GitOps delivery engine that converts every code push into a running, health-checked microservice on AKS — with zero human intervention, full traceability from commit to container, and enterprise-grade resilience patterns. Pipeline completes in under 90 seconds with ₹0 idle cost."*
+This is a demonstration project, not a production service. Deployment timing, uptime and cloud costs depend on the environment. The Dockerfile currently uses a single-stage build.
