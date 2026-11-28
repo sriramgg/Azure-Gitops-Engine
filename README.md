@@ -57,3 +57,7 @@ If a rollout fails, inspect pod events and logs. Where a previous revision exist
 ## Scope
 
 This is a demonstration project, not a production service. Deployment timing, uptime and cloud costs depend on the environment. The Dockerfile currently uses a single-stage build.
+
+## CI and optional cloud deployment
+
+Pushes and pull requests run Flask endpoint tests, build the Docker image and smoke-test its health endpoint without Azure credentials. To deploy, configure repository secrets `AZURE_CREDENTIALS` (Azure service principal JSON including clientId, clientSecret, tenantId and subscriptionId), `AKS_RG`, and `AKS_NAME`. Set the repository variable `ACR_NAME` if the registry is not `sriramacr`. The identity needs registry push and cluster deployment permissions; AKS must be able to pull the image. In Actions, select Cloud-Native GitOps Engine Lifecycle, Run workflow on main, and enable deploy_azure. Cloud deployment is intentionally skipped during ordinary CI runs. A successful CI run does not prove Azure deployment succeeded.
