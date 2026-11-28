@@ -1,58 +1,84 @@
 name: Cloud-Native GitOps Engine Lifecycle
 on:
   push:
-    branches: [ "main" ]
-
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy_azure:
+        description: Deploy to configured Azure resources
+        type: boolean
+        default: false
+permissions:
+  contents: read
 jobs:
-  build-and-push:
+  test-build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-
-    - name: Azure Login
-      uses: azure/login@v2
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-    - name: Authenticate ACR & Build Docker Image
-      run: |
-        az acr login --name sriramacr
-        docker build -t sriramacr.azurecr.io/jobguard-app:${{ github.sha }} .
-
-    - name: Push Image to ACR
-      run: |
-        docker push sriramacr.azurecr.io/jobguard-app:${{ github.sha }}
-
-    - name: Tag as latest
-      run: |
-        docker tag sriramacr.azurecr.io/jobguard-app:${{ github.sha }} sriramacr.azurecr.io/jobguard-app:latest
-        docker push sriramacr.azurecr.io/jobguard-app:latest
-
-    - name: Cleanup Docker credentials
-      run: docker logout
-
-  deploy-to-aks:
-    needs: build-and-push
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Test Flask endpoints
+        run: |
+          python - <<'PY'
+          from app import app
+          with app.test_client() as client:
+              assert client.get('/').status_code == 200
+              response = client.get('/health')
+              assert response.status_code == 200
+              assert response.get_json() == {'status': 'healthy'}
+          PY
+      - name: Build and smoke-test container
+        run: |
+          docker build -t jobguard-app:ci .
+          docker run -d --name smoke -p 127.0.0.1:8080:80 jobguard-app:ci
+          trap 'docker rm -f smoke' EXIT
+          curl --fail --retry 15 --retry-connrefused --retry-delay 2 http://127.0.0.1:8080/health
+  deploy-to-azure:
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy_azure && github.ref == 'refs/heads/main'
+    needs: test-build
     runs-on: ubuntu-latest
+    concurrency:
+      group: azure-deployment
+      cancel-in-progress: false
+    env:
+      AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+      AKS_RG: ${{ secrets.AKS_RG }}
+      AKS_NAME: ${{ secrets.AKS_NAME }}
+      ACR_NAME: ${{ vars.ACR_NAME || 'sriramacr' }}
     steps:
-    - uses: actions/checkout@v3
-
-    - name: Azure Login
-      uses: azure/login@v2
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-    - name: Set AKS context
-      run: |
-        az aks get-credentials --resource-group ${{ secrets.AKS_RG }} --name ${{ secrets.AKS_NAME }}
-
-    - name: Deploy to AKS
-      run: |
-        sed -i "s|IMAGE_PLACEHOLDER|sriramacr.azurecr.io/jobguard-app:${{ github.sha }}|g" k8s/deployment.yaml
-        kubectl apply -f k8s/deployment.yaml
-        kubectl apply -f k8s/service.yaml
-        kubectl apply -f k8s/hpa.yaml
-
-    - name: Verify rollout status
-      run: |
-        kubectl rollout status deployment/jobguard-app --timeout=120s
+      - uses: actions/checkout@v4
+      - name: Validate deployment configuration
+        run: |
+          for key in AZURE_CREDENTIALS AKS_RG AKS_NAME; do
+            if [ -z "${!key}" ]; then
+              echo "::error::Missing repository secret: $key"
+              exit 1
+            fi
+          done
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Build and publish image
+        run: |
+          az acr login --name "$ACR_NAME"
+          IMAGE="$(az acr show --name "$ACR_NAME" --query loginServer -o tsv)/jobguard-app:$GITHUB_SHA"
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+      - name: Deploy to AKS
+        run: |
+          az aks get-credentials --resource-group "$AKS_RG" --name "$AKS_NAME"
+          sed "s|IMAGE_PLACEHOLDER|$IMAGE|g" k8s/deployment.yaml | kubectl apply -f -
+          kubectl apply -f k8s/service.yaml
+          kubectl apply -f k8s/hpa.yaml
+          kubectl rollout status deployment/jobguard-app --timeout=120s
+      - name: Cleanup
+        if: always()
+        run: |
+          docker logout "$ACR_NAME.azurecr.io" || true
+          az logout || true
