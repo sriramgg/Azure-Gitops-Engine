@@ -36,7 +36,19 @@ jobs:
           docker build -t jobguard-app:ci .
           docker run -d --name smoke -p 127.0.0.1:8080:80 jobguard-app:ci
           trap 'docker rm -f smoke' EXIT
-          curl --fail --retry 15 --retry-connrefused --retry-delay 2 http://127.0.0.1:8080/health
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error --max-time 3 http://127.0.0.1:8080/health; then
+              exit 0
+            fi
+            if [ "$(docker inspect -f '{{.State.Running}}' smoke)" != "true" ]; then
+              docker logs smoke
+              exit 1
+            fi
+            sleep 2
+          done
+          docker logs smoke
+          echo "::error::Container did not become healthy"
+          exit 1
   deploy-to-azure:
     if: github.event_name == 'workflow_dispatch' && inputs.deploy_azure && github.ref == 'refs/heads/main'
     needs: test-build
